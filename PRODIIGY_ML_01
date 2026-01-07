@@ -1,0 +1,155 @@
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_squared_error, r2_score
+import gradio as gr
+
+
+print("Creating sample dataset...")
+
+
+np.random.seed(42)
+
+n_samples = 200
+
+square_feet = np.random.randint(800, 4000, n_samples)
+bedrooms = np.random.randint(1, 6, n_samples)
+bathrooms = np.random.randint(1, 4, n_samples)
+
+
+price = (
+    50000 +
+    square_feet * 150 +
+    bedrooms * 20000 +
+    bathrooms * 15000 +
+    np.random.normal(0, 30000, n_samples)
+)
+
+
+data = pd.DataFrame({
+    'square_feet': square_feet,
+    'bedrooms': bedrooms,
+    'bathrooms': bathrooms,
+    'price': price
+})
+
+print(f"Dataset created with {len(data)} samples")
+print("\nFirst few rows:")
+print(data.head())
+print(f"\nDataset statistics:")
+print(data.describe())
+
+
+X = data[['square_feet', 'bedrooms', 'bathrooms']]
+y = data['price']
+
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
+
+print(f"\nTraining set size: {len(X_train)}")
+print(f"Testing set size: {len(X_test)}")
+
+
+print("\nTraining the Linear Regression model...")
+model = LinearRegression()
+model.fit(X_train, y_train)
+print("Model training completed!")
+
+
+y_pred = model.predict(X_test)
+
+
+mse = mean_squared_error(y_test, y_pred)
+r2 = r2_score(y_test, y_pred)
+
+print("\n" + "="*50)
+print("MODEL EVALUATION RESULTS")
+print("="*50)
+print(f"Mean Squared Error (MSE): ${mse:,.2f}")
+print(f"Root Mean Squared Error (RMSE): ${np.sqrt(mse):,.2f}")
+print(f"R² Score: {r2:.4f}")
+print(f"Model Accuracy: {r2*100:.2f}%")
+print("="*50)
+
+
+print("\nModel Coefficients:")
+print(f"  - Price per square foot: ${model.coef_[0]:,.2f}")
+print(f"  - Price per bedroom: ${model.coef_[1]:,.2f}")
+print(f"  - Price per bathroom: ${model.coef_[2]:,.2f}")
+print(f"  - Base price (intercept): ${model.intercept_:,.2f}")
+
+
+def predict_house_price(square_feet, bedrooms, bathrooms):
+    """
+    Predicts house price based on input features
+
+    Args:
+        square_feet: Size of the house in square feet
+        bedrooms: Number of bedrooms
+        bathrooms: Number of bathrooms
+
+    Returns:
+        Formatted string with predicted price
+    """
+
+    input_data = np.array([[square_feet, bedrooms, bathrooms]])
+
+
+    predicted_price = model.predict(input_data)[0]
+
+
+    return f"💰 Predicted House Price: ${predicted_price:,.2f}"
+
+
+print("\nCreating Gradio interface...")
+
+
+interface = gr.Interface(
+    fn=predict_house_price,
+    inputs=[
+        gr.Number(
+            label="Square Footage",
+            value=2000,
+            info="Enter the size of the house in square feet"
+        ),
+        gr.Number(
+            label="Number of Bedrooms",
+            value=3,
+            info="Enter the number of bedrooms"
+        ),
+        gr.Number(
+            label="Number of Bathrooms",
+            value=2,
+            info="Enter the number of bathrooms"
+        )
+    ],
+    outputs=gr.Textbox(
+        label="Prediction Result",
+        lines=2
+    ),
+    title="🏠 House Price Predictor",
+    description="""
+    This model predicts house prices based on three key features:
+    square footage, number of bedrooms, and number of bathrooms.
+
+    Enter the house details below and click 'Submit' to get the predicted price.
+    """,
+    examples=[
+        [2000, 3, 2],
+        [1500, 2, 1],
+        [3000, 4, 3],
+        [2500, 3, 2.5]
+    ],
+    theme=gr.themes.Soft(),
+    flagging_mode="never"
+)
+
+print("\nLaunching Gradio interface...")
+print("The interface will open in a new window/tab.")
+print("You can share the public URL with others!")
+
+
+interface.launch(share=True)
