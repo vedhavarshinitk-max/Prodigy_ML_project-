@@ -1,0 +1,319 @@
+
+
+!pip install -q gradio tensorflow pillow numpy
+
+import gradio as gr
+import tensorflow as tf
+from tensorflow.keras.applications import MobileNetV2
+from tensorflow.keras.applications.mobilenet_v2 import preprocess_input, decode_predictions
+from tensorflow.keras.preprocessing import image
+import numpy as np
+from PIL import Image
+import json
+
+
+FOOD_CALORIE_DB = {
+
+    'banana': {'calories': 89, 'serving': '1 medium (100g)', 'category': 'Fruit'},
+    'apple': {'calories': 52, 'serving': '1 medium (100g)', 'category': 'Fruit'},
+    'orange': {'calories': 47, 'serving': '1 medium (100g)', 'category': 'Fruit'},
+    'strawberry': {'calories': 32, 'serving': '100g', 'category': 'Fruit'},
+    'pineapple': {'calories': 50, 'serving': '100g', 'category': 'Fruit'},
+    'watermelon': {'calories': 30, 'serving': '100g', 'category': 'Fruit'},
+    'grapes': {'calories': 69, 'serving': '100g', 'category': 'Fruit'},
+    'lemon': {'calories': 29, 'serving': '100g', 'category': 'Fruit'},
+
+
+    'broccoli': {'calories': 34, 'serving': '100g', 'category': 'Vegetable'},
+    'carrot': {'calories': 41, 'serving': '100g', 'category': 'Vegetable'},
+    'mushroom': {'calories': 22, 'serving': '100g', 'category': 'Vegetable'},
+    'cauliflower': {'calories': 25, 'serving': '100g', 'category': 'Vegetable'},
+    'bell_pepper': {'calories': 31, 'serving': '100g', 'category': 'Vegetable'},
+    'cucumber': {'calories': 16, 'serving': '100g', 'category': 'Vegetable'},
+
+
+    'steak': {'calories': 271, 'serving': '100g', 'category': 'Protein'},
+    'chicken': {'calories': 239, 'serving': '100g cooked', 'category': 'Protein'},
+    'salmon': {'calories': 208, 'serving': '100g', 'category': 'Protein'},
+    'tuna': {'calories': 144, 'serving': '100g', 'category': 'Protein'},
+    'egg': {'calories': 155, 'serving': '100g (2 large eggs)', 'category': 'Protein'},
+
+
+    'pizza': {'calories': 266, 'serving': '100g (1-2 slices)', 'category': 'Fast Food'},
+    'hamburger': {'calories': 295, 'serving': '100g', 'category': 'Fast Food'},
+    'hot_dog': {'calories': 290, 'serving': '100g', 'category': 'Fast Food'},
+    'bread': {'calories': 265, 'serving': '100g', 'category': 'Grain'},
+    'rice': {'calories': 130, 'serving': '100g cooked', 'category': 'Grain'},
+    'pasta': {'calories': 131, 'serving': '100g cooked', 'category': 'Grain'},
+    'burrito': {'calories': 206, 'serving': '100g', 'category': 'Fast Food'},
+    'spaghetti': {'calories': 158, 'serving': '100g', 'category': 'Grain'},
+
+
+    'ice_cream': {'calories': 207, 'serving': '100g', 'category': 'Dessert'},
+    'chocolate': {'calories': 546, 'serving': '100g', 'category': 'Dessert'},
+    'cake': {'calories': 257, 'serving': '100g', 'category': 'Dessert'},
+    'cupcake': {'calories': 305, 'serving': '100g', 'category': 'Dessert'},
+    'doughnut': {'calories': 452, 'serving': '100g', 'category': 'Dessert'},
+    'waffle': {'calories': 291, 'serving': '100g', 'category': 'Dessert'},
+    'pancake': {'calories': 227, 'serving': '100g', 'category': 'Dessert'},
+    'pretzel': {'calories': 380, 'serving': '100g', 'category': 'Snack'},
+    'popcorn': {'calories': 375, 'serving': '100g', 'category': 'Snack'},
+    'french_fries': {'calories': 312, 'serving': '100g', 'category': 'Fast Food'},
+
+
+    'espresso': {'calories': 9, 'serving': '100ml', 'category': 'Beverage'},
+    'cup': {'calories': 0, 'serving': 'N/A (container)', 'category': 'Object'},
+    'plate': {'calories': 0, 'serving': 'N/A (container)', 'category': 'Object'},
+
+
+    'sushi': {'calories': 143, 'serving': '100g', 'category': 'Asian'},
+    'ramen': {'calories': 436, 'serving': '100g', 'category': 'Asian'},
+    'dumpling': {'calories': 200, 'serving': '100g', 'category': 'Asian'},
+    'spring_roll': {'calories': 150, 'serving': '100g', 'category': 'Asian'},
+
+
+    'salad': {'calories': 33, 'serving': '100g', 'category': 'Salad'},
+    'guacamole': {'calories': 160, 'serving': '100g', 'category': 'Dip'},
+    'hummus': {'calories': 166, 'serving': '100g', 'category': 'Dip'},
+}
+
+
+print("Loading MobileNetV2 model...")
+
+model = MobileNetV2(weights='imagenet', include_top=True)
+print("Model loaded successfully!")
+
+
+
+def preprocess_image(img):
+    """
+    Preprocesses the input image for MobileNetV2
+
+    Args:
+        img: PIL Image or numpy array
+
+    Returns:
+        Preprocessed image array ready for model prediction
+    """
+
+    if isinstance(img, np.ndarray):
+        img = Image.fromarray(img.astype('uint8'))
+
+
+    img = img.resize((224, 224))
+
+
+    img_array = image.img_to_array(img)
+
+
+    img_array = np.expand_dims(img_array, axis=0)
+
+
+    img_array = preprocess_input(img_array)
+
+    return img_array
+
+
+
+def match_food_to_database(predicted_label):
+    """
+    Matches ImageNet prediction to our calorie database
+
+    Args:
+        predicted_label: String label from model prediction
+
+    Returns:
+        Matched food item key or None
+    """
+    predicted_lower = predicted_label.lower()
+
+
+    if predicted_lower in FOOD_CALORIE_DB:
+        return predicted_lower
+
+
+    for food_key in FOOD_CALORIE_DB.keys():
+        if food_key in predicted_lower or predicted_lower in food_key:
+            return food_key
+
+    return None
+
+def classify_food_and_estimate_calories(img):
+    """
+    Main function: Classifies food and estimates calories
+
+    Args:
+        img: Input image from Gradio
+
+    Returns:
+        Tuple of (food_name, calorie_info, explanation)
+    """
+    try:
+
+        processed_img = preprocess_image(img)
+
+
+        predictions = model.predict(processed_img)
+
+
+        decoded = decode_predictions(predictions, top=5)[0]
+
+
+        matched_food = None
+        matched_prediction = None
+
+        for pred in decoded:
+            class_id, label, confidence = pred
+            matched = match_food_to_database(label)
+            if matched:
+                matched_food = matched
+                matched_prediction = (label, confidence)
+                break
+
+
+        if matched_food and matched_prediction:
+            food_info = FOOD_CALORIE_DB[matched_food]
+            label, confidence = matched_prediction
+
+            food_name = f"🍽️ **{matched_food.replace('_', ' ').title()}**"
+
+            calorie_info = f"""
+### 📊 Nutritional Information
+
+**Estimated Calories:** {food_info['calories']} kcal
+**Serving Size:** {food_info['serving']}
+**Category:** {food_info['category']}
+**Confidence:** {confidence*100:.1f}%
+"""
+
+            explanation = f"""
+### ℹ️ Important Notes
+
+- **Approximation:** Calorie values are estimates based on standard serving sizes
+- **Variation:** Actual calories may vary based on:
+  - Preparation method (fried vs. baked)
+  - Specific ingredients and toppings
+  - Brand differences
+  - Portion size
+- **Not Medical Advice:** This is for educational/informational purposes only
+- **Model Detection:** Recognized as "{label}" from ImageNet dataset
+
+💡 **Tip:** For precise nutritional tracking, use food labels or weigh your portions!
+"""
+
+        else:
+
+            top_label, top_conf = decoded[0][1], decoded[0][2]
+
+            food_name = f"❓ **{top_label.replace('_', ' ').title()}**"
+
+            calorie_info = f"""
+### ⚠️ Food Not in Database
+
+**Detected:** {top_label}
+**Confidence:** {top_conf*100:.1f}%
+
+This item was recognized but doesn't have calorie information in our database.
+
+**Top 5 Predictions:**
+"""
+            for i, (_, label, conf) in enumerate(decoded, 1):
+                calorie_info += f"\n{i}. {label.replace('_', ' ').title()} ({conf*100:.1f}%)"
+
+            explanation = """
+### 💡 Suggestions
+
+- Try uploading a clearer image
+- Ensure the food item is centered and well-lit
+- Our database includes common foods like fruits, vegetables, proteins, and popular dishes
+- Some items may be recognized as objects rather than food
+
+This tool works best with single, clearly visible food items!
+"""
+
+        return food_name, calorie_info, explanation
+
+    except Exception as e:
+        return (
+            "❌ Error",
+            f"An error occurred: {str(e)}",
+            "Please try uploading a different image in JPG or PNG format."
+        )
+
+
+custom_css = """
+.gradio-container {
+    font-family: 'Arial', sans-serif;
+}
+.output-markdown h3 {
+    color: #2c3e50;
+    margin-top: 1em;
+}
+"""
+
+
+with gr.Blocks(css=custom_css, theme=gr.themes.Soft()) as demo:
+    gr.Markdown(
+        """
+        # 🍎 Food Classification & Calorie Estimator
+
+        Upload a food image to get instant calorie estimates and nutritional information!
+
+        **Powered by:** MobileNetV2 (Deep Learning) + Custom Nutrition Database
+        """
+    )
+
+    with gr.Row():
+        with gr.Column(scale=1):
+
+            input_image = gr.Image(
+                label="Upload Food Image",
+                type="pil",
+                sources=["upload", "clipboard"]
+            )
+
+            submit_btn = gr.Button("🔍 Analyze Food", variant="primary", size="lg")
+
+            gr.Markdown(
+                """
+                ### 📝 Tips for Best Results:
+                - Use clear, well-lit images
+                - Center the food item
+                - Single food items work best
+                - Supports JPG, PNG formats
+                """
+            )
+
+        with gr.Column(scale=1):
+
+            food_output = gr.Markdown(label="Detected Food")
+            calorie_output = gr.Markdown(label="Calorie Information")
+            explanation_output = gr.Markdown(label="Details & Disclaimer")
+
+
+    gr.Markdown("### 🎯 Try These Examples:")
+    gr.Examples(
+        examples=[
+            ["https://images.unsplash.com/photo-1571771894821-ce9b6c11b08e?w=400"],  # Banana
+            ["https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=400"],  # Pizza
+            ["https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400"],     # Salad
+        ],
+        inputs=input_image,
+        label="Click to load example"
+    )
+
+
+    submit_btn.click(
+        fn=classify_food_and_estimate_calories,
+        inputs=input_image,
+        outputs=[food_output, calorie_output, explanation_output]
+    )
+
+
+
+print("\n" + "="*70)
+print("🚀 Launching Food Calorie Estimator...")
+print("="*70 + "\n")
+
+
+demo.launch(debug=True, share=True)
