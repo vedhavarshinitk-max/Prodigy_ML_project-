@@ -1,0 +1,348 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+import gradio as gr
+import warnings
+warnings.filterwarnings('ignore')
+
+sns.set_style("whitegrid")
+
+def create_sample_dataset(n_samples=300):
+    """
+    Generate a synthetic customer dataset with realistic purchase patterns
+    
+    Parameters:
+    - n_samples: Number of customer records to generate
+    
+    Returns:
+    - DataFrame with customer purchase history
+    """
+    np.random.seed(42)  
+    
+    n_high = int(n_samples * 0.2)
+    high_value = pd.DataFrame({
+        'Annual_Spending': np.random.normal(5000, 1000, n_high),
+        'Number_of_Purchases': np.random.normal(50, 10, n_high),
+        'Average_Purchase_Value': np.random.normal(100, 20, n_high),
+        'Visit_Frequency': np.random.normal(12, 3, n_high)
+    })
+    
+    
+    n_medium = int(n_samples * 0.5)
+    medium_value = pd.DataFrame({
+        'Annual_Spending': np.random.normal(2500, 500, n_medium),
+        'Number_of_Purchases': np.random.normal(25, 8, n_medium),
+        'Average_Purchase_Value': np.random.normal(50, 15, n_medium),
+        'Visit_Frequency': np.random.normal(8, 2, n_medium)
+    })
+    
+    
+    n_low = n_samples - n_high - n_medium
+    low_value = pd.DataFrame({
+        'Annual_Spending': np.random.normal(800, 200, n_low),
+        'Number_of_Purchases': np.random.normal(10, 3, n_low),
+        'Average_Purchase_Value': np.random.normal(25, 8, n_low),
+        'Visit_Frequency': np.random.normal(4, 1, n_low)
+    })
+    
+   
+    customer_data = pd.concat([high_value, medium_value, low_value], ignore_index=True)
+    
+    
+    customer_data = customer_data.abs()
+    
+   
+    customer_data.insert(0, 'Customer_ID', range(1, n_samples + 1))
+    
+    return customer_data
+
+def preprocess_data(data):
+    """
+    Prepare data for clustering by scaling features
+    
+    Parameters:
+    - data: DataFrame with customer features
+    
+    Returns:
+    - scaled_data: Normalized feature array
+    - scaler: Fitted StandardScaler object for future transformations
+    - feature_names: List of feature column names
+    """
+   
+    feature_columns = ['Annual_Spending', 'Number_of_Purchases', 
+                      'Average_Purchase_Value', 'Visit_Frequency']
+    
+    X = data[feature_columns].values
+    
+    
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+    
+    return X_scaled, scaler, feature_columns
+
+def perform_clustering(X_scaled, n_clusters=3):
+    """
+    Apply K-Means clustering algorithm
+    
+    Parameters:
+    - X_scaled: Normalized feature array
+    - n_clusters: Number of clusters to create
+    
+    Returns:
+    - kmeans: Fitted K-Means model
+    - labels: Cluster assignments for each data point
+    """
+    
+    kmeans = KMeans(
+        n_clusters=n_clusters,
+        init='k-means++',  # Smart initialization for faster convergence
+        n_init=10,          # Number of times algorithm runs with different seeds
+        max_iter=300,       # Maximum iterations per run
+        random_state=42     # For reproducibility
+    )
+    
+    
+    labels = kmeans.fit_predict(X_scaled)
+    
+    return kmeans, labels
+
+def visualize_clusters(X_scaled, labels, n_clusters):
+    """
+    Create visualization of clusters using PCA for dimensionality reduction
+    
+    Parameters:
+    - X_scaled: Normalized feature array
+    - labels: Cluster assignments
+    - n_clusters: Number of clusters
+    
+    Returns:
+    - fig: Matplotlib figure object
+    """
+    
+    pca = PCA(n_components=2)
+    X_pca = pca.fit_transform(X_scaled)
+    
+    
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    
+    scatter = ax.scatter(X_pca[:, 0], X_pca[:, 1], 
+                        c=labels, cmap='viridis', 
+                        s=50, alpha=0.6, edgecolors='w', linewidth=0.5)
+    
+    
+    ax.set_xlabel(f'First Principal Component ({pca.explained_variance_ratio_[0]:.2%} variance)', 
+                 fontsize=12)
+    ax.set_ylabel(f'Second Principal Component ({pca.explained_variance_ratio_[1]:.2%} variance)', 
+                 fontsize=12)
+    ax.set_title(f'Customer Segmentation - {n_clusters} Clusters', fontsize=14, fontweight='bold')
+    
+   
+    cbar = plt.colorbar(scatter, ax=ax)
+    cbar.set_label('Cluster', fontsize=12)
+    
+    plt.tight_layout()
+    
+    return fig
+
+def interpret_cluster(cluster_label, cluster_centers, scaler, feature_names):
+    """
+    Provide meaningful interpretation of cluster characteristics
+    
+    Parameters:
+    - cluster_label: Assigned cluster number
+    - cluster_centers: Centroids of all clusters
+    - scaler: Fitted scaler to inverse transform centroids
+    - feature_names: Names of features
+    
+    Returns:
+    - interpretation: String describing cluster characteristics
+    """
+    
+    centers_original = scaler.inverse_transform(cluster_centers)
+    
+    
+    cluster_chars = centers_original[cluster_label]
+    
+    
+    interpretation = f"**Cluster {cluster_label} Characteristics:**\n\n"
+    
+    for i, feature in enumerate(feature_names):
+        interpretation += f"- **{feature.replace('_', ' ')}**: ${cluster_chars[i]:.2f}\n"
+    
+    
+    spending = cluster_chars[0]
+    if spending > 4000:
+        customer_type = "🌟 **Premium Customer** - High value segment"
+    elif spending > 2000:
+        customer_type = "💼 **Regular Customer** - Medium value segment"
+    else:
+        customer_type = "🔵 **Occasional Customer** - Low value segment"
+    
+    interpretation += f"\n**Customer Type**: {customer_type}"
+    
+    return interpretation
+
+def predict_customer_cluster(annual_spending, num_purchases, avg_purchase_value, 
+                            visit_frequency, n_clusters):
+    """
+    Predict which cluster a new customer belongs to
+    
+    Parameters:
+    - annual_spending: Total annual spending
+    - num_purchases: Number of purchases made
+    - avg_purchase_value: Average transaction value
+    - visit_frequency: Number of visits per year
+    - n_clusters: Number of clusters to use
+    
+    Returns:
+    - cluster_label: Assigned cluster
+    - interpretation: Cluster characteristics
+    - visualization: Plot of all clusters
+    """
+    
+    train_data = create_sample_dataset(300)
+    X_scaled, scaler, feature_names = preprocess_data(train_data)
+    
+   
+    kmeans, train_labels = perform_clustering(X_scaled, n_clusters)
+    
+    
+    new_customer = np.array([[annual_spending, num_purchases, 
+                             avg_purchase_value, visit_frequency]])
+    
+    
+    new_customer_scaled = scaler.transform(new_customer)
+    
+    
+    cluster_label = kmeans.predict(new_customer_scaled)[0]
+    
+   
+    interpretation = interpret_cluster(cluster_label, kmeans.cluster_centers_, 
+                                      scaler, feature_names)
+    
+   
+    viz = visualize_clusters(X_scaled, train_labels, n_clusters)
+    
+    return f"**Assigned to Cluster: {cluster_label}**", interpretation, viz
+
+def create_gradio_ui():
+    """
+    Build interactive Gradio interface for customer cluster prediction
+    """
+    
+    custom_css = """
+    .gradio-container {
+        font-family: 'Arial', sans-serif;
+    }
+    .output-text {
+        font-size: 16px;
+    }
+    """
+    
+   
+    with gr.Blocks(css=custom_css, title="Customer Segmentation") as demo:
+        gr.Markdown(
+            """
+            # 🛍️ Customer Segmentation using K-Means Clustering
+            
+            This tool helps classify customers into different segments based on their purchase behavior.
+            Enter customer details below to predict which cluster they belong to.
+            """
+        )
+        
+        with gr.Row():
+            with gr.Column():
+                gr.Markdown("### 📊 Customer Purchase Details")
+                
+                # Input fields
+                annual_spending = gr.Number(
+                    label="Annual Spending ($)",
+                    value=2500,
+                    minimum=0,
+                    info="Total amount spent in a year"
+                )
+                
+                num_purchases = gr.Number(
+                    label="Number of Purchases",
+                    value=25,
+                    minimum=0,
+                    info="Total number of transactions"
+                )
+                
+                avg_purchase = gr.Number(
+                    label="Average Purchase Value ($)",
+                    value=50,
+                    minimum=0,
+                    info="Average transaction amount"
+                )
+                
+                visit_freq = gr.Number(
+                    label="Visit Frequency (per year)",
+                    value=8,
+                    minimum=0,
+                    info="Number of store visits annually"
+                )
+                
+                n_clusters = gr.Slider(
+                    label="Number of Clusters",
+                    minimum=2,
+                    maximum=6,
+                    step=1,
+                    value=3,
+                    info="Choose how many customer segments to create"
+                )
+                
+                predict_btn = gr.Button("🔍 Predict Customer Segment", variant="primary")
+            
+            with gr.Column():
+                gr.Markdown("### 📈 Results")
+                
+                cluster_output = gr.Textbox(
+                    label="Cluster Assignment",
+                    lines=2
+                )
+                
+                interpretation_output = gr.Markdown(
+                    label="Cluster Interpretation"
+                )
+                
+                plot_output = gr.Plot(label="Cluster Visualization")
+        
+        gr.Markdown(
+            """
+            ---
+            ### 💡 Tips for Interpretation:
+            - **Higher Annual Spending** → Premium customer segment
+            - **More Purchases** → Loyal, frequent shopper
+            - **Higher Average Purchase Value** → Quality-focused buyer
+            - **Higher Visit Frequency** → Engaged customer
+            
+            ### 📌 How to Use:
+            1. Enter customer purchase metrics
+            2. Select the number of clusters (typically 3-5 works best)
+            3. Click "Predict Customer Segment" to see results
+            4. Review cluster assignment and characteristics
+            """
+        )
+        
+        
+        predict_btn.click(
+            fn=predict_customer_cluster,
+            inputs=[annual_spending, num_purchases, avg_purchase, 
+                   visit_freq, n_clusters],
+            outputs=[cluster_output, interpretation_output, plot_output]
+        )
+    
+    return demo
+
+if __name__ == "__main__":
+    
+    demo = create_gradio_ui()
+    
+    
+    demo.launch(share=True, debug=True)
